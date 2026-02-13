@@ -76,12 +76,6 @@ npm run lint     # Linter
 
 Este projeto utiliza a arquitetura base fornecida pelo **Constant (Constatic CLI)** como estrutura fundamental.
 
-Framework original:  
-https://github.com/rinckodev/constatic  
-
-Documentação oficial:  
-https://constatic-docs.vercel.app/docs/discord/start  
-
 Todos os créditos referentes à arquitetura base pertencem ao autor original.
 
 Customizações, módulos internos e manutenção foram realizados por **@richthe** para a **Alta RJ • Lotus Group**.
