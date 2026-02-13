@@ -45,6 +45,11 @@ Este repositório contém a base técnica do bot Discord da Alta RJ • Lotus Gr
 - Discord app credentials
 
 ---
+Framework original:  
+https://github.com/rinckodev/constatic  
+
+Documentação oficial:  
+https://constatic-docs.vercel.app/docs/discord/start
 
 ## Installation & Setup
 
