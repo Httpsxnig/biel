@@ -33,10 +33,10 @@ export interface StreamerFormState {
 }
 
 export const streamerRoleLabels: Record<StreamerRoleKey, string> = {
-    influencer: "STAFF-VICE - influencer",
-    creator: "STAFF-VICE - Criador de conteudo",
-    tier1: "STAFF-VICE - Tier 1",
-    tier2: "STAFF-VICE - Tier 2",
+    influencer: "STAFF- ALTA RJ - influencer",
+    creator: "STAFF-ALTA RJ - Criador de conteudo",
+    tier1: "STAFF-ALTA RJ - Tier 1",
+    tier2: "STAFF-ALTA RJ - Tier 2",
 };
 
 export const streamerQuestions: readonly StreamerQuestion[] = [
