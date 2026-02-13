@@ -130,7 +130,7 @@ createResponder({
         const applicationChannelId = config.channels?.applications;
         if (!applicationChannelId) {
             await interaction.update({
-                embeds: [createNoticeEmbed("error", "Canal de analise ausente", "Configure o canal com `/streamers canais`.")],
+                embeds: [createNoticeEmbed("error", "Canal de analise ausente", "Configure no /painel em Streamers: Canal de analise.")],
                 components: [],
             });
             return;
@@ -219,7 +219,7 @@ createResponder({
         if (!selectRow) {
             await interaction.reply({
                 flags: ["Ephemeral"],
-                embeds: [createNoticeEmbed("error", "Cargos nao configurados", "Configure cargos com `/streamers cargo`.")],
+                embeds: [createNoticeEmbed("error", "Cargos nao configurados", "Configure no /painel em Streamers: Cargos.")],
             });
             return;
         }
@@ -425,7 +425,31 @@ export async function processStreamerFormMessage(message: Message) {
         return true;
     }
 
-    const attachmentLinks = [...message.attachments.values()].map((attachment) => attachment.url);
+    const attachments = [...message.attachments.values()];
+    const imageAttachments = attachments.filter((attachment) => {
+        const contentType = attachment.contentType?.toLowerCase() ?? "";
+        const fileName = attachment.name?.toLowerCase() ?? "";
+        return (
+            contentType.startsWith("image/") ||
+            /\.(png|jpe?g|gif|webp|bmp)$/i.test(fileName)
+        );
+    });
+
+    if (question.allowAttachment && imageAttachments.length === 0) {
+        await message.author.send({
+            embeds: [
+                createNoticeEmbed(
+                    "error",
+                    "Resposta invalida",
+                    "Na pergunta 8/8 voce precisa enviar uma imagem (print). Tente novamente com anexo de imagem."
+                ),
+            ],
+        });
+        return true;
+    }
+
+    const attachmentLinks = (question.allowAttachment ? imageAttachments : attachments)
+        .map((attachment) => attachment.url);
     if (attachmentLinks.length > 0) {
         state.attachments.push(...attachmentLinks);
     }

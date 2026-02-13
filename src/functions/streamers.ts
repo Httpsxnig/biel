@@ -47,7 +47,7 @@ export const streamerQuestions: readonly StreamerQuestion[] = [
     { key: "contentType", label: "Tipo de conteudo" },
     { key: "cityNameId", label: "Nome e ID da cidade ingame" },
     { key: "inGamePhone", label: "Numero ingame (telefone RP)" },
-    { key: "proof", label: "Envie um print do perfil/seguindo", allowAttachment: true },
+    { key: "proof", label: "Envie um print do perfil/seguindo (somente imagem)", allowAttachment: true },
 ];
 
 export const activeStreamerForms = new Map<string, StreamerFormState>();
@@ -92,11 +92,14 @@ export function createStreamerQuestionEmbed(state: StreamerFormState) {
     const question = streamerQuestions[state.step];
     const current = state.step + 1;
     const total = streamerQuestions.length;
+    const attachmentHint = question.allowAttachment
+        ? "\n\nEnvie uma imagem em anexo. Mensagem sem imagem nao sera aceita."
+        : "";
 
     return new EmbedBuilder()
         .setColor("#3b82f6")
         .setTitle("Formulario de Streamer")
-        .setDescription(`**${current}/${total}** - ${question.label}`)
+        .setDescription(`**${current}/${total}** - ${question.label}${attachmentHint}`)
         .setFooter({ text: "Digite cancelar para parar o formulario." })
         .setTimestamp();
 }

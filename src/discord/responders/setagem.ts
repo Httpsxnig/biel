@@ -385,33 +385,37 @@ createResponder({
         if (!context) return;
 
         const value = interaction.fields.getTextInputValue("value").trim();
+        await interaction.deferReply({ flags: ["Ephemeral"] });
         const streamerConfig = await db.streamerConfigs.get(context.guildId);
 
-        if (["remover", "remove", "off", "desativar", "desligar"].includes(value.toLowerCase())) {
-            streamerConfig.set("panelImage", undefined);
+        try {
+            if (["remover", "remove", "off", "desativar", "desligar"].includes(value.toLowerCase())) {
+                streamerConfig.set("panelImage", undefined);
+                await streamerConfig.save();
+                await interaction.editReply({
+                    embeds: [createNoticeEmbed("success", "Imagem removida", "A imagem do painel streamer foi removida.")],
+                });
+                return;
+            }
+
+            const imageUrl = normalizeImageUrl(value);
+            if (!imageUrl) {
+                await interaction.editReply({
+                    embeds: [createNoticeEmbed("error", "URL invalida", "Informe uma URL valida ou use `remover`.")],
+                });
+                return;
+            }
+
+            streamerConfig.set("panelImage", imageUrl);
             await streamerConfig.save();
-            await interaction.reply({
-                flags: ["Ephemeral"],
-                embeds: [createNoticeEmbed("success", "Imagem removida", "A imagem do painel streamer foi removida.")],
+            await interaction.editReply({
+                embeds: [createNoticeEmbed("success", "Imagem atualizada", "Imagem do painel streamer atualizada com sucesso.")],
             });
-            return;
-        }
-
-        const imageUrl = normalizeImageUrl(value);
-        if (!imageUrl) {
-            await interaction.reply({
-                flags: ["Ephemeral"],
-                embeds: [createNoticeEmbed("error", "URL invalida", "Informe uma URL valida ou use `remover`.")],
+        } catch {
+            await interaction.editReply({
+                embeds: [createNoticeEmbed("error", "Falha ao salvar", "Nao consegui salvar a imagem. Tente novamente.")],
             });
-            return;
         }
-
-        streamerConfig.set("panelImage", imageUrl);
-        await streamerConfig.save();
-        await interaction.reply({
-            flags: ["Ephemeral"],
-            embeds: [createNoticeEmbed("success", "Imagem atualizada", "Imagem do painel streamer atualizada com sucesso.")],
-        });
     },
 });
 
