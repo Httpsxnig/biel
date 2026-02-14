@@ -1,5 +1,6 @@
 import { createCommand } from "#base";
 import { db } from "#database";
+import { env } from "#env";
 import { buildSettingsV2PanelReply, createBlacklistedEmbed, isBlacklisted } from "#functions";
 import { ApplicationCommandType } from "discord.js";
 
@@ -10,6 +11,23 @@ createCommand({
     dmPermission: false,
     defaultMemberPermissions: ["ManageGuild"],
     async run(interaction) {
+        const ownerId = env.OWNER_DISCORD_ID?.trim();
+        if (!ownerId) {
+            await interaction.reply({
+                flags: ["Ephemeral"],
+                content: "OWNER_DISCORD_ID nao foi configurado no .env.",
+            });
+            return;
+        }
+
+        if (interaction.user.id !== ownerId) {
+            await interaction.reply({
+                flags: ["Ephemeral"],
+                content: "Apenas o dono configurado pode acessar este painel.",
+            });
+            return;
+        }
+
         const [guildData, streamerConfig] = await Promise.all([
             db.guilds.get(interaction.guildId),
             db.streamerConfigs.get(interaction.guildId),

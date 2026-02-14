@@ -10,6 +10,13 @@ export const env = await validateEnv(z.looseObject({
     DATABASE_NAME: z.string().optional() ,
     SERVER_PORT: z.string().optional(),
     SERVER_BASE_URL: z.string().optional() ,
-    CLIENT_SECRET: z.string().optional()
+    CLIENT_SECRET: z.string().optional(),
+    OWNER_DISCORD_ID: z.string().optional(),
+    CARGO_LEGAL: z.string().optional(),
+    CARGO_ILEGAL: z.string().optional(),
+    CARGO_VERF1: z.string().optional(),
+    CARGO_VERF2: z.string().optional(),
+    CARGO_VERF3: z.string().optional(),
+    CARGO_VERF4: z.string().optional(),
 
 }));

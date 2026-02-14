@@ -1,12 +1,14 @@
 import { createResponder } from "#base";
 import { db } from "#database";
+import { env } from "#env";
 import {
+    beginStreamerPanelImageUpload,
     buildChannelPicker,
     buildPrefixModal,
     buildRolePicker,
     buildSettingsV2PanelUpdate,
-    buildStreamerImageModal,
     buildWatchingModal,
+    clearStreamerPanelImageUpload,
     createNoPermissionEmbed,
     createNoticeEmbed,
     isChannelSettingKey,
@@ -18,7 +20,6 @@ import {
     isStreamerChannelSettingKey,
     isStreamerResetSettingKey,
     isStreamerRoleSettingKey,
-    normalizeImageUrl,
     normalizePrefix,
     normalizeWatching,
     panelChannelSettingLabels,
@@ -49,9 +50,27 @@ async function ensureGuildContext(interaction: {
 }
 
 async function ensurePanelPermission(interaction: {
+    user: { id: string; };
     memberPermissions: { has(permission: unknown): boolean; } | null;
     reply: (options: Record<string, unknown>) => Promise<unknown>;
 }) {
+    const ownerId = env.OWNER_DISCORD_ID?.trim();
+    if (!ownerId) {
+        await interaction.reply({
+            flags: ["Ephemeral"],
+            embeds: [createNoticeEmbed("error", "Painel bloqueado", "OWNER_DISCORD_ID nao foi configurado no .env.")],
+        });
+        return false;
+    }
+
+    if (interaction.user.id !== ownerId) {
+        await interaction.reply({
+            flags: ["Ephemeral"],
+            embeds: [createNoPermissionEmbed("acessar este painel")],
+        });
+        return false;
+    }
+
     if (interaction.memberPermissions?.has("ManageGuild")) return true;
 
     await interaction.reply({
@@ -370,52 +389,32 @@ createResponder({
         const context = await ensureGuildContext(interaction);
         if (!context) return;
 
-        const streamerConfig = await db.streamerConfigs.get(context.guildId);
-        await interaction.showModal(buildStreamerImageModal(streamerConfig.panelImage));
-    },
-});
-
-createResponder({
-    customId: "painel/modal-streamer-image",
-    types: [ResponderType.Modal],
-    async run(interaction) {
-        if (!await ensurePanelPermission(interaction)) return;
-
-        const context = await ensureGuildContext(interaction);
-        if (!context) return;
-
-        const value = interaction.fields.getTextInputValue("value").trim();
-        await interaction.deferReply({ flags: ["Ephemeral"] });
-        const streamerConfig = await db.streamerConfigs.get(context.guildId);
-
-        try {
-            if (["remover", "remove", "off", "desativar", "desligar"].includes(value.toLowerCase())) {
-                streamerConfig.set("panelImage", undefined);
-                await streamerConfig.save();
-                await interaction.editReply({
-                    embeds: [createNoticeEmbed("success", "Imagem removida", "A imagem do painel streamer foi removida.")],
-                });
-                return;
-            }
-
-            const imageUrl = normalizeImageUrl(value);
-            if (!imageUrl) {
-                await interaction.editReply({
-                    embeds: [createNoticeEmbed("error", "URL invalida", "Informe uma URL valida ou use `remover`.")],
-                });
-                return;
-            }
-
-            streamerConfig.set("panelImage", imageUrl);
-            await streamerConfig.save();
-            await interaction.editReply({
-                embeds: [createNoticeEmbed("success", "Imagem atualizada", "Imagem do painel streamer atualizada com sucesso.")],
+        if (!interaction.channelId) {
+            await interaction.reply({
+                flags: ["Ephemeral"],
+                embeds: [createNoticeEmbed("error", "Canal invalido", "Nao consegui identificar este canal.")],
             });
-        } catch {
-            await interaction.editReply({
-                embeds: [createNoticeEmbed("error", "Falha ao salvar", "Nao consegui salvar a imagem. Tente novamente.")],
-            });
+            return;
         }
+
+        clearStreamerPanelImageUpload(interaction.user.id);
+        beginStreamerPanelImageUpload(interaction.user.id, context.guildId, interaction.channelId);
+
+        await interaction.reply({
+            flags: ["Ephemeral"],
+            embeds: [
+                createNoticeEmbed(
+                    "info",
+                    "Enviar imagem no chat",
+                    [
+                        "Envie agora uma imagem neste mesmo canal.",
+                        "A primeira imagem valida sera salva automaticamente no painel.",
+                        "Tempo limite: 2 minutos.",
+                        "Para cancelar: envie `cancelar`.",
+                    ].join("\n"),
+                ),
+            ],
+        });
     },
 });
 

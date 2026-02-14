@@ -3,8 +3,14 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    ContainerBuilder,
     EmbedBuilder,
+    SectionBuilder,
+    SeparatorBuilder,
+    SeparatorSpacingSize,
     StringSelectMenuBuilder,
+    TextDisplayBuilder,
+    ThumbnailBuilder,
     type APIEmbedField,
 } from "discord.js";
 
@@ -17,6 +23,7 @@ export type StreamerQuestionKey =
     | "contentType"
     | "cityNameId"
     | "inGamePhone"
+    | "rpActivity"
     | "proof";
 
 export interface StreamerQuestion {
@@ -33,11 +40,14 @@ export interface StreamerFormState {
 }
 
 export const streamerRoleLabels: Record<StreamerRoleKey, string> = {
-    influencer: "STAFF- ALTA RJ - influencer",
-    creator: "STAFF-ALTA RJ - Criador de conteudo",
-    tier1: "STAFF-ALTA RJ - Tier 1",
-    tier2: "STAFF-ALTA RJ - Tier 2",
+    influencer: "ALTA - TIER 1 - INFLUENCER",
+    creator: "ALTA - TIER 2 - CRIADOR DE CONTEUDO",
+    tier1: "ALTA - TIER 3 - CCONTEUDO",
+    tier2: "ALTA - TIER 4 STREAMER",
 };
+
+const streamerRoleEntries = Object.entries(streamerRoleLabels) as [StreamerRoleKey, string][];
+const streamerPanelAccentColor = 0x790af7;
 
 export const streamerQuestions: readonly StreamerQuestion[] = [
     { key: "requirementsRead", label: "Leu os requisitos? (SIM/NAO)" },
@@ -47,6 +57,7 @@ export const streamerQuestions: readonly StreamerQuestion[] = [
     { key: "contentType", label: "Tipo de conteudo" },
     { key: "cityNameId", label: "Nome e ID da cidade ingame" },
     { key: "inGamePhone", label: "Numero ingame (telefone RP)" },
+    { key: "rpActivity", label: "Atuacao (profissao ou funcao no RP)" },
     { key: "proof", label: "Envie um print do perfil/seguindo (somente imagem)", allowAttachment: true },
 ];
 
@@ -57,7 +68,7 @@ export function createStreamerPanelMessage(guildId: string, guildName: string, c
         new ButtonBuilder({
             customId: `streamers/form/start/${guildId}`,
             style: ButtonStyle.Primary,
-            label: "Começar formulario",
+            label: "Comecar formulario",
         }),
         new ButtonBuilder({
             customId: `streamers/form/requirements/${guildId}`,
@@ -73,21 +84,60 @@ export function createStreamerPanelMessage(guildId: string, guildName: string, c
         }),
     );
 
-    const embed = new EmbedBuilder()
-        .setColor("#3b82f6")
-        .setTitle("Formulario Streamer/Creator")
-        .setDescription([
-            `Servidor: **${guildName}**`,
-            "Clique em **Comecar formulario** para responder no privado.",
-            "Processo simplificado e rapido.",
-        ].join("\n"))
-        .setImage(config.panelImage ?? null)
-        .setFooter({ text: config.footer ?? "Sistema de Streamers" })
-        .setTimestamp();
+    const section = new SectionBuilder()
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent("# Formulario Streamer/Criador de Conteudo"),
+            new TextDisplayBuilder().setContent(
+                [
+                    `> Servidor: **${guildName}**`,
+                    "> Clique em **Comecar formulario** para responder no privado.",
+                    "> Processo simplificado e rapido.",
+                ].join("\n"),
+            ),
+        );
 
-    return { embeds: [embed], components: [row] };
+    const panelImageUrl = getValidImageUrl(config.panelImage);
+    const footerText = config.footer?.trim() || "Sistema de Streamers";
+    if (panelImageUrl) {
+        section.setThumbnailAccessory(new ThumbnailBuilder().setURL(panelImageUrl));
+    } else {
+        section.setButtonAccessory(
+            new ButtonBuilder()
+                .setCustomId(`streamers/form/info/${guildId}`)
+                .setLabel("Sem imagem")
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true),
+        );
+    }
+
+    const container = new ContainerBuilder()
+        .setAccentColor(streamerPanelAccentColor)
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setSpacing(SeparatorSpacingSize.Small)
+                .setDivider(true),
+        )
+        .addSectionComponents(section)
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setSpacing(SeparatorSpacingSize.Small)
+                .setDivider(true),
+        )
+        .addActionRowComponents(row)
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setSpacing(SeparatorSpacingSize.Small)
+                .setDivider(true),
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`-# ${footerText}`),
+        );
+
+    return {
+        flags: ["IsComponentsV2"] as const,
+        components: [container],
+    };
 }
-
 export function createStreamerQuestionEmbed(state: StreamerFormState) {
     const question = streamerQuestions[state.step];
     const current = state.step + 1;
@@ -97,7 +147,7 @@ export function createStreamerQuestionEmbed(state: StreamerFormState) {
         : "";
 
     return new EmbedBuilder()
-        .setColor("#3b82f6")
+        .setColor("#a112cc")
         .setTitle("Formulario de Streamer")
         .setDescription(`**${current}/${total}** - ${question.label}${attachmentHint}`)
         .setFooter({ text: "Digite cancelar para parar o formulario." })
@@ -155,7 +205,7 @@ export function createStreamerRequestEmbed(
     }
 
     return new EmbedBuilder()
-        .setColor("#3b82f6")
+        .setColor("#ff0c03")
         .setTitle("Novo pedido de streamer")
         .setDescription(`Usuario: ${user.toString()} (\`${user.id}\`)`)
         .setThumbnail(user.displayAvatarURL())
@@ -182,8 +232,7 @@ export function createStreamerReviewButtons(requestId: string, disabled = false)
 }
 
 export function createStreamerRoleSelect(requestId: string, config: Partial<StreamerConfigSchema>) {
-    const roleEntries = Object.entries(streamerRoleLabels) as [StreamerRoleKey, string][];
-    const options = roleEntries
+    const options = streamerRoleEntries
         .filter(([key]) => !!config.roles?.[key])
         .map(([key, label]) => ({
             label,
@@ -226,4 +275,14 @@ export function createStreamerRejectedEmbed() {
 function truncateAnswer(text: string) {
     if (text.length <= 1024) return text;
     return `${text.slice(0, 1021)}...`;
+}
+
+function getValidImageUrl(url?: string | null) {
+    const value = url?.trim();
+    if (!value) return null;
+    try {
+        return new URL(value).toString();
+    } catch {
+        return null;
+    }
 }

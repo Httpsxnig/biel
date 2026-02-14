@@ -1,5 +1,6 @@
 import { createResponder } from "#base";
 import { db } from "#database";
+import { env } from "#env";
 import {
     activeStreamerForms,
     createNoticeEmbed,
@@ -16,7 +17,14 @@ import {
     type StreamerRoleKey,
 } from "#functions";
 import { ResponderType } from "@constatic/base";
-import { EmbedBuilder, type Client, type Message } from "discord.js";
+import { ActionRowBuilder, EmbedBuilder, StringSelectMenuBuilder, type Client, type Message } from "discord.js";
+
+type StreamerFunctionKey = "legal" | "ilegal";
+
+const streamerFunctionLabels: Record<StreamerFunctionKey, string> = {
+    legal: "Legal",
+    ilegal: "Ilegal",
+};
 
 createResponder({
     customId: "streamers/form/start/:guildId",
@@ -48,11 +56,17 @@ createResponder({
                 flags: ["Ephemeral"],
                 embeds: [createNoticeEmbed("success", "Formulario iniciado", "Confira seu privado para responder as perguntas.")],
             });
-        } catch {
+        } catch (error) {
             activeStreamerForms.delete(interaction.user.id);
+            const errorCode = typeof error === "object" && error && "code" in error
+                ? Number((error as { code?: number | string; }).code)
+                : null;
+            const description = errorCode === 50007
+                ? "Nao consegui te enviar DM. Verifique privacidade de DMs para membros do servidor."
+                : "Falha interna ao montar sua DM de formulario. Tente novamente.";
             await interaction.reply({
                 flags: ["Ephemeral"],
-                embeds: [createNoticeEmbed("error", "Falha ao iniciar", "Nao consegui te enviar DM. Ative mensagens privadas.")],
+                embeds: [createNoticeEmbed("error", "Falha ao iniciar", description)],
             });
         }
     },
@@ -300,12 +314,92 @@ createResponder({
             return;
         }
 
-        const selected = interaction.values[0] as StreamerRoleKey;
+        const selected = interaction.values[0];
+        if (!isStreamerRoleKey(selected)) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Cargo invalido", "Selecione um cargo valido para continuar.")],
+                components: [],
+            });
+            return;
+        }
+
         const config = await db.streamerConfigs.get(request.guildId);
         const roleId = config.roles?.[selected];
         if (!roleId) {
             await interaction.update({
                 embeds: [createNoticeEmbed("error", "Cargo nao configurado", "O cargo selecionado nao foi configurado.")],
+                components: [],
+            });
+            return;
+        }
+
+        await interaction.update({
+            embeds: [
+                createNoticeEmbed(
+                    "info",
+                    "Selecionar funcao",
+                    `Set escolhido: **${streamerRoleLabels[selected]}**\nAgora escolha a funcao no set.`,
+                ),
+            ],
+            components: [createStreamerFunctionSelect(requestId, selected)],
+        });
+    },
+});
+
+createResponder({
+    customId: "streamers/review/function/:requestId/:selectedRole",
+    types: [ResponderType.StringSelect],
+    cache: "cached",
+    parse: (params) => ({ requestId: params.requestId, selectedRole: params.selectedRole }),
+    async run(interaction, { requestId, selectedRole }) {
+        if (!interaction.member.permissions.has("ManageGuild")) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Sem permissao", "Voce precisa de `Gerenciar Servidor`.")],
+                components: [],
+            });
+            return;
+        }
+
+        if (!isStreamerRoleKey(selectedRole)) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Cargo invalido", "O set selecionado nao e valido.")],
+                components: [],
+            });
+            return;
+        }
+
+        const selectedFunction = interaction.values[0];
+        if (!isStreamerFunctionKey(selectedFunction)) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Funcao invalida", "Selecione uma funcao valida.")],
+                components: [],
+            });
+            return;
+        }
+
+        const request = await db.streamerRequests.findById(requestId);
+        if (!request || request.status !== "pending") {
+            await interaction.update({
+                embeds: [createNoticeEmbed("warning", "Pedido indisponivel", "Este pedido nao esta mais pendente.")],
+                components: [],
+            });
+            return;
+        }
+
+        const config = await db.streamerConfigs.get(request.guildId);
+        const roleId = config.roles?.[selectedRole];
+        if (!roleId) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Cargo nao configurado", "O set selecionado nao foi configurado no painel.")],
+                components: [],
+            });
+            return;
+        }
+
+        const functionRoleData = getFunctionRoleByKey(selectedFunction);
+        if (!functionRoleData.roleId) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Funcao sem cargo", functionRoleData.warning ?? "Cargo da funcao nao configurado no .env.")],
                 components: [],
             });
             return;
@@ -320,7 +414,34 @@ createResponder({
             return;
         }
 
-        const roleAdded = await member.roles.add(roleId).then(() => true).catch(async () => {
+        const verificationRoleData = getVerificationRoleByStreamerTier(selectedRole);
+        const verificationRoleId = verificationRoleData.roleId;
+        const rolesToAdd = new Set<string>([roleId]);
+        const functionRoleId = functionRoleData.roleId;
+        let appliedVerificationRoleId: string | null = null;
+        let appliedFunctionRoleId: string | null = null;
+        let verificationWarning: string | null = verificationRoleData.warning;
+
+        if (verificationRoleId) {
+            if (interaction.guild.roles.cache.has(verificationRoleId)) {
+                rolesToAdd.add(verificationRoleId);
+                appliedVerificationRoleId = verificationRoleId;
+            } else {
+                verificationWarning = "Cargo VERF configurado no .env nao encontrado no servidor.";
+            }
+        }
+
+        if (!functionRoleId || !interaction.guild.roles.cache.has(functionRoleId)) {
+            await interaction.update({
+                embeds: [createNoticeEmbed("error", "Cargo da funcao invalido", "O cargo da funcao escolhida nao existe neste servidor.")],
+                components: [],
+            });
+            return;
+        }
+        rolesToAdd.add(functionRoleId);
+        appliedFunctionRoleId = functionRoleId;
+
+        const roleAdded = await member.roles.add([...rolesToAdd]).then(() => true).catch(async () => {
             await interaction.update({
                 embeds: [createNoticeEmbed("error", "Falha ao setar cargo", "Verifique se o bot tem permissao e hierarquia.")],
                 components: [],
@@ -330,20 +451,27 @@ createResponder({
         if (!roleAdded) return;
 
         request.set("status", "approved");
-        request.set("selectedRoleKey", selected);
+        request.set("selectedRoleKey", selectedRole);
         request.set("reviewedBy", interaction.user.id);
         request.set("reviewedAt", new Date());
         await request.save();
 
-        const roleLabel = streamerRoleLabels[selected];
+        const roleLabel = streamerRoleLabels[selectedRole];
+        const functionLabel = streamerFunctionLabels[selectedFunction];
         await updateRequestMessage(interaction.client, request.id, request.channelId, request.messageId, {
-            statusText: `Aprovado por ${interaction.user}\nCargo: <@&${roleId}>`,
+            statusText: [
+                `Aprovado por ${interaction.user}`,
+                `Cargo: <@&${roleId}>`,
+                `Funcao: **${functionLabel}**`,
+                appliedFunctionRoleId ? `Cargo funcao: <@&${appliedFunctionRoleId}>` : null,
+                appliedVerificationRoleId ? `Cargo VERF: <@&${appliedVerificationRoleId}>` : null,
+            ].filter(Boolean).join("\n"),
             color: "#22c55e",
         });
 
         const target = await interaction.client.users.fetch(request.userId).catch(() => null);
         if (target) {
-            await target.send({ embeds: [createStreamerApprovedEmbed(roleLabel)] }).catch(() => null);
+            await target.send({ embeds: [createStreamerApprovedEmbed(`${roleLabel} | ${functionLabel}`)] }).catch(() => null);
         }
 
         if (config.channels?.approvedLogs) {
@@ -357,20 +485,135 @@ createResponder({
                             .setDescription([
                                 `Usuario: <@${request.userId}>`,
                                 `Cargo: <@&${roleId}>`,
+                                `Funcao: **${functionLabel}**`,
+                                appliedFunctionRoleId ? `Cargo funcao: <@&${appliedFunctionRoleId}>` : null,
+                                appliedVerificationRoleId ? `Cargo VERF: <@&${appliedVerificationRoleId}>` : null,
                                 `Aprovado por: ${interaction.user}`,
-                            ].join("\n"))
+                            ].filter(Boolean).join("\n"))
                             .setTimestamp()
                     ],
                 }).catch(() => null);
             }
         }
 
+        const responseLines = [
+            `Set aplicado: **${roleLabel}**`,
+            `Funcao escolhida: **${functionLabel}**`,
+        ];
+        if (appliedFunctionRoleId) {
+            responseLines.push(`Cargo de funcao aplicado: <@&${appliedFunctionRoleId}>`);
+        }
+        if (appliedVerificationRoleId) {
+            responseLines.push(`Cargo VERF aplicado: <@&${appliedVerificationRoleId}>`);
+        }
+        if (verificationWarning) {
+            responseLines.push(`Aviso: ${verificationWarning}`);
+        }
+
         await interaction.update({
-            embeds: [createNoticeEmbed("success", "Aprovacao concluida", `Cargo aplicado: **${roleLabel}**`)],
+            embeds: [createNoticeEmbed("success", "Aprovacao concluida", responseLines.join("\n"))],
             components: [],
         });
     },
 });
+
+function createStreamerFunctionSelect(requestId: string, selectedRole: StreamerRoleKey) {
+    return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`streamers/review/function/${requestId}/${selectedRole}`)
+            .setPlaceholder("Selecione a funcao do set")
+            .addOptions(
+                {
+                    label: "Legal",
+                    value: "legal",
+                    emoji: "⚖️",
+                },
+                {
+                    label: "Ilegal",
+                    value: "ilegal",
+                    emoji: "🔫",
+                },
+            )
+            .setMinValues(1)
+            .setMaxValues(1),
+    );
+}
+
+function isStreamerRoleKey(value: string): value is StreamerRoleKey {
+    return Object.prototype.hasOwnProperty.call(streamerRoleLabels, value);
+}
+
+function isStreamerFunctionKey(value: string): value is StreamerFunctionKey {
+    return value === "legal" || value === "ilegal";
+}
+
+function getFunctionRoleByKey(selected: StreamerFunctionKey) {
+    const map: Record<StreamerFunctionKey, string | undefined> = {
+        legal: env.CARGO_LEGAL,
+        ilegal: env.CARGO_ILEGAL,
+    };
+    const envKeyMap: Record<StreamerFunctionKey, string> = {
+        legal: "CARGO_LEGAL",
+        ilegal: "CARGO_ILEGAL",
+    };
+
+    const roleId = normalizeRoleIdFromEnv(map[selected]);
+    if (!map[selected]?.trim()) {
+        return {
+            roleId: null,
+            warning: `${envKeyMap[selected]} nao definido no .env.`,
+        };
+    }
+    if (!roleId) {
+        return {
+            roleId: null,
+            warning: `${envKeyMap[selected]} invalido no .env. Use ID do cargo (ou mencao <@&ID>).`,
+        };
+    }
+
+    return { roleId, warning: null as string | null };
+}
+
+function getVerificationRoleByStreamerTier(selected: StreamerRoleKey) {
+    const map: Record<StreamerRoleKey, string | undefined> = {
+        influencer: env.CARGO_VERF1,
+        creator: env.CARGO_VERF2,
+        tier1: env.CARGO_VERF3,
+        tier2: env.CARGO_VERF4,
+    };
+    const envKeyMap: Record<StreamerRoleKey, string> = {
+        influencer: "CARGO_VERF1",
+        creator: "CARGO_VERF2",
+        tier1: "CARGO_VERF3",
+        tier2: "CARGO_VERF4",
+    };
+
+    const roleId = normalizeRoleIdFromEnv(map[selected]);
+    if (!map[selected]?.trim()) {
+        return { roleId: null, warning: null as string | null };
+    }
+    if (!roleId) {
+        return {
+            roleId: null,
+            warning: `${envKeyMap[selected]} invalido no .env. Use ID do cargo (ou menção <@&ID>).`,
+        };
+    }
+
+    return { roleId, warning: null as string | null };
+}
+
+function normalizeRoleIdFromEnv(value?: string) {
+    const raw = value?.trim();
+    if (!raw) return null;
+
+    const mentionMatch = /^<@&(\d{17,20})>$/.exec(raw);
+    if (mentionMatch) return mentionMatch[1];
+
+    const idMatch = /^(\d{17,20})$/.exec(raw);
+    if (idMatch) return idMatch[1];
+
+    return null;
+}
 
 async function updateRequestMessage(
     client: Client,

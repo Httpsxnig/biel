@@ -72,10 +72,10 @@ export const streamerChannelSettingLabels: Record<StreamerChannelSettingKey, str
 };
 
 export const streamerRoleSettingLabels: Record<StreamerRoleSettingKey, string> = {
-    streamerInfluencer: "Streamer: Cargo influencer",
-    streamerCreator: "Streamer: Cargo creator",
-    streamerTier1: "Streamer: Cargo tier 1",
-    streamerTier2: "Streamer: Cargo tier 2",
+    streamerInfluencer: "Streamer: Cargo ALTA - TIER 1 - INFLUENCER",
+    streamerCreator: "Streamer: Cargo ALTA - TIER 2 - CRIADOR DE CONTEUDO",
+    streamerTier1: "Streamer: Cargo ALTA - TIER 3 - CCONTEUDO",
+    streamerTier2: "Streamer: Cargo ALTA - TIER 4 STREAMER",
 };
 
 export const panelChannelSettingLabels: Record<PanelChannelSettingKey, string> = {
@@ -204,6 +204,62 @@ export function normalizeImageUrl(value: string): string | null {
     }
 }
 
+const STREAMER_PANEL_IMAGE_UPLOAD_TTL_MS = 2 * 60 * 1000;
+
+interface PendingStreamerPanelImageUpload {
+    guildId: string;
+    channelId: string;
+    expiresAt: number;
+}
+
+const pendingStreamerPanelImageUploads = new Map<string, PendingStreamerPanelImageUpload>();
+
+function sweepExpiredPendingStreamerPanelImageUploads(now = Date.now()) {
+    for (const [userId, pending] of pendingStreamerPanelImageUploads) {
+        if (pending.expiresAt <= now) {
+            pendingStreamerPanelImageUploads.delete(userId);
+        }
+    }
+}
+
+export function beginStreamerPanelImageUpload(userId: string, guildId: string, channelId: string) {
+    sweepExpiredPendingStreamerPanelImageUploads();
+    const pending: PendingStreamerPanelImageUpload = {
+        guildId,
+        channelId,
+        expiresAt: Date.now() + STREAMER_PANEL_IMAGE_UPLOAD_TTL_MS,
+    };
+    pendingStreamerPanelImageUploads.set(userId, pending);
+    return pending;
+}
+
+export function getStreamerPanelImageUpload(userId: string) {
+    const pending = pendingStreamerPanelImageUploads.get(userId);
+    if (!pending) return null;
+
+    if (pending.expiresAt <= Date.now()) {
+        pendingStreamerPanelImageUploads.delete(userId);
+        return null;
+    }
+    return pending;
+}
+
+export function clearStreamerPanelImageUpload(userId: string) {
+    pendingStreamerPanelImageUploads.delete(userId);
+}
+
+export function getFirstImageAttachmentUrl(
+    attachments: Iterable<{ contentType?: string | null; name?: string | null; url: string; }>,
+) {
+    for (const attachment of attachments) {
+        const contentType = attachment.contentType?.toLowerCase() ?? "";
+        const fileName = attachment.name?.toLowerCase() ?? "";
+        const isImage = contentType.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(fileName);
+        if (isImage) return attachment.url;
+    }
+    return null;
+}
+
 function formatChannel(channelId?: string | null) {
     return channelId ? `<#${channelId}>` : "`Nao definido`";
 }
@@ -260,7 +316,7 @@ export function buildSettingsEmbed(
     const streamerImage = getStreamerPanelImage(streamerConfig);
 
     return new EmbedBuilder()
-        .setColor("#f80000ff")
+        .setColor("#f80000")
         .setAuthor({ name: "[Painel de Configuracao]" })
         .setTitle(guild.name)
         .setThumbnail(guild.iconURL({ forceStatic: false }) ?? null)

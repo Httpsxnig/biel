@@ -15,6 +15,8 @@ export const streamerConfigSchema = new Schema(
             creator: String,
             tier1: String,
             tier2: String,
+            tier3: String,
+            tier4: String,
         },
         panelImage: String,
         footer: { type: String, default: "Sistema de Streamers" },
