@@ -19,11 +19,13 @@ import {
 import { ResponderType } from "@constatic/base";
 import { ActionRowBuilder, EmbedBuilder, StringSelectMenuBuilder, type Client, type Message } from "discord.js";
 
-type StreamerFunctionKey = "legal" | "ilegal";
+type StreamerFunctionKey = "legal" | "ilegal" | "bombeiro" | "hospital";
 
 const streamerFunctionLabels: Record<StreamerFunctionKey, string> = {
     legal: "Legal",
     ilegal: "Ilegal",
+    bombeiro: "ㅤʙᴏᴍʙᴇɪʀᴏ",
+    hospital: "ㅤʜᴏsᴘɪᴛᴀʟ",
 };
 
 createResponder({
@@ -533,6 +535,16 @@ function createStreamerFunctionSelect(requestId: string, selectedRole: StreamerR
                     value: "ilegal",
                     emoji: "🔫",
                 },
+                {
+                    label: "ㅤʙᴏᴍʙᴇɪʀᴏ",
+                    value: "bombeiro",
+                    emoji: "🚒",
+                },
+                {
+                    label: "ㅤʜᴏsᴘɪᴛᴀʟ",
+                    value: "hospital",
+                    emoji: "🏥",
+                },
             )
             .setMinValues(1)
             .setMaxValues(1),
@@ -544,17 +556,25 @@ function isStreamerRoleKey(value: string): value is StreamerRoleKey {
 }
 
 function isStreamerFunctionKey(value: string): value is StreamerFunctionKey {
-    return value === "legal" || value === "ilegal";
+    return value === "legal" || value === "ilegal" || value === "bombeiro" || value === "hospital";
 }
 
 function getFunctionRoleByKey(selected: StreamerFunctionKey) {
     const map: Record<StreamerFunctionKey, string | undefined> = {
         legal: env.CARGO_LEGAL,
         ilegal: env.CARGO_ILEGAL,
+        bombeiro: env.CARGO_BOMBEIRO || env.CARGO_VERF3,
+        hospital: env.CARGO_HOSPITAL || env.CARGO_VERF4,
     };
     const envKeyMap: Record<StreamerFunctionKey, string> = {
         legal: "CARGO_LEGAL",
         ilegal: "CARGO_ILEGAL",
+        bombeiro: env.CARGO_BOMBEIRO?.trim()
+            ? "CARGO_BOMBEIRO"
+            : "CARGO_BOMBEIRO (fallback CARGO_VERF3)",
+        hospital: env.CARGO_HOSPITAL?.trim()
+            ? "CARGO_HOSPITAL"
+            : "CARGO_HOSPITAL (fallback CARGO_VERF4)",
     };
 
     const roleId = normalizeRoleIdFromEnv(map[selected]);
