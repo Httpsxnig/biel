@@ -19,3 +19,7 @@ export const streamerRequestSchema = new Schema({
 }, {
     timestamps: true,
 });
+
+streamerRequestSchema.index({ guildId: 1, messageId: 1 });
+streamerRequestSchema.index({ guildId: 1, status: 1, createdAt: -1 });
+streamerRequestSchema.index({ createdAt: 1 });

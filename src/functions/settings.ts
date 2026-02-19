@@ -1,5 +1,5 @@
 import type { GuildSchema, StreamerConfigSchema } from "#database";
-import { createContainer, createTextDisplay } from "@magicyan/discord";
+import { createContainer, createSeparator, createTextDisplay } from "@magicyan/discord";
 import {
     ActionRowBuilder,
     ButtonBuilder,
@@ -19,8 +19,9 @@ import {
     type InteractionUpdateOptions,
 } from "discord.js";
 
-export const channelSettingKeys = ["logs", "general", "counter", "economy"] as const;
+export const channelSettingKeys = ["roPanel", "roAnalysis", "roDecisionLogs"] as const;
 export const roleSettingKeys = ["economy", "blacklistManager"] as const;
+export const roRoleSettingKeys = ["roNotifyRoles"] as const;
 export const streamerChannelSettingKeys = [
     "streamerApplications",
     "streamerRequirements",
@@ -35,12 +36,13 @@ export const streamerRoleSettingKeys = [
 ] as const;
 export const moduleSettingKeys = ["economy", "blacklist", "counter"] as const;
 export const resetSettingKeys = ["prefix", "channels", "roles", "modules", "presence", "blacklist", "all"] as const;
-export const streamerResetSettingKeys = ["streamerChannels", "streamerRoles", "streamerImage"] as const;
+export const streamerResetSettingKeys = ["streamerChannels", "streamerRoles", "streamerImage", "roNotifyRoles"] as const;
 export const panelChannelSettingKeys = [...channelSettingKeys, ...streamerChannelSettingKeys] as const;
-export const panelRoleSettingKeys = [...roleSettingKeys, ...streamerRoleSettingKeys] as const;
+export const panelRoleSettingKeys = [...roRoleSettingKeys, ...streamerRoleSettingKeys] as const;
 
 export type ChannelSettingKey = typeof channelSettingKeys[number];
 export type RoleSettingKey = typeof roleSettingKeys[number];
+export type RoRoleSettingKey = typeof roRoleSettingKeys[number];
 export type StreamerChannelSettingKey = typeof streamerChannelSettingKeys[number];
 export type StreamerRoleSettingKey = typeof streamerRoleSettingKeys[number];
 export type PanelChannelSettingKey = typeof panelChannelSettingKeys[number];
@@ -53,15 +55,18 @@ export type StreamerChannelConfigKey = "applications" | "requirements" | "benefi
 export type StreamerRoleConfigKey = "influencer" | "creator" | "tier1" | "tier2";
 
 export const channelSettingLabels: Record<ChannelSettingKey, string> = {
-    logs: "Canal de logs (mensagens)",
-    general: "Canal geral",
-    counter: "Canal/categoria de contador",
-    economy: "Canal de economia",
+    roPanel: "R.O: Canal do painel",
+    roAnalysis: "R.O: Canal de analise",
+    roDecisionLogs: "R.O: Canal de logs de decisao",
 };
 
 export const roleSettingLabels: Record<RoleSettingKey, string> = {
     economy: "Cargo de economia",
     blacklistManager: "Cargo de gerencia da blacklist",
+};
+
+export const roRoleSettingLabels: Record<RoRoleSettingKey, string> = {
+    roNotifyRoles: "R.O: Cargos de notificacao",
 };
 
 export const streamerChannelSettingLabels: Record<StreamerChannelSettingKey, string> = {
@@ -84,6 +89,7 @@ export const panelChannelSettingLabels: Record<PanelChannelSettingKey, string> =
 };
 
 export const panelRoleSettingLabels: Record<PanelRoleSettingKey, string> = {
+    ...roRoleSettingLabels,
     ...roleSettingLabels,
     ...streamerRoleSettingLabels,
 };
@@ -108,6 +114,7 @@ export const streamerResetSettingLabels: Record<StreamerResetSettingKey, string>
     streamerChannels: "Streamers: canais",
     streamerRoles: "Streamers: cargos",
     streamerImage: "Streamers: imagem",
+    roNotifyRoles: "R.O: cargos de notificacao",
 };
 
 export const streamerChannelConfigMap: Record<StreamerChannelSettingKey, StreamerChannelConfigKey> = {
@@ -138,18 +145,16 @@ const messageChannelTypes = [
     ChannelType.GuildAnnouncement,
 ] as ApplicationCommandOptionAllowedChannelTypes[];
 
-const counterChannelTypes = [
-    ChannelType.GuildText,
-    ChannelType.GuildAnnouncement,
-    ChannelType.GuildCategory,
-] as ApplicationCommandOptionAllowedChannelTypes[];
-
 export function isChannelSettingKey(value: string): value is ChannelSettingKey {
     return (channelSettingKeys as readonly string[]).includes(value);
 }
 
 export function isRoleSettingKey(value: string): value is RoleSettingKey {
     return (roleSettingKeys as readonly string[]).includes(value);
+}
+
+export function isRoRoleSettingKey(value: string): value is RoRoleSettingKey {
+    return (roRoleSettingKeys as readonly string[]).includes(value);
 }
 
 export function isStreamerChannelSettingKey(value: string): value is StreamerChannelSettingKey {
@@ -268,8 +273,9 @@ function formatRole(roleId?: string | null) {
     return roleId ? `<@&${roleId}>` : "`Nao definido`";
 }
 
-function formatModule(enabled?: boolean) {
-    return enabled ? "`ON`" : "`OFF`";
+function formatRoleList(roleIds?: string[] | null) {
+    if (!roleIds?.length) return "`Nao definido`";
+    return roleIds.map((id) => `<@&${id}>`).join(", ");
 }
 
 function getPartialChannels(guildData: Partial<GuildSchema>) {
@@ -278,6 +284,11 @@ function getPartialChannels(guildData: Partial<GuildSchema>) {
 
 function getPartialRoles(guildData: Partial<GuildSchema>) {
     return (guildData.roles ?? {}) as Partial<Record<RoleSettingKey, string>>;
+}
+
+function getPartialRoNotifyRoles(guildData: Partial<GuildSchema>) {
+    const roles = guildData.roles as { roNotifyRoles?: string[]; } | undefined;
+    return (roles?.roNotifyRoles ?? []).filter(Boolean);
 }
 
 function getPartialModules(guildData: Partial<GuildSchema>) {
@@ -306,12 +317,9 @@ export function buildSettingsEmbed(
     streamerConfig?: Partial<StreamerConfigSchema>,
 ) {
     const channels = getPartialChannels(guildData);
-    const roles = getPartialRoles(guildData);
-    const modules = getPartialModules(guildData);
+    const roNotifyRoles = getPartialRoNotifyRoles(guildData);
     const streamerChannels = getPartialStreamerChannels(streamerConfig);
     const streamerRoles = getPartialStreamerRoles(streamerConfig);
-    const blacklistCount = guildData.blacklist?.length ?? 0;
-    const activeModules = moduleSettingKeys.filter((key) => modules[key]).length;
     const watchingActivity = getWatchingActivity(guildData);
     const streamerImage = getStreamerPanelImage(streamerConfig);
 
@@ -330,24 +338,20 @@ export function buildSettingsEmbed(
                 value: [
                     `Prefixo: \`${guildData.prefix ?? ";"}\``,
                     `Assistindo: ${watchingActivity ? `\`${watchingActivity}\`` : "`Nao definido`"}`,
-                    `Modulos ativos: \`${activeModules}/${moduleSettingKeys.length}\``,
-                    `Usuarios na blacklist: \`${blacklistCount}\``,
                 ].join("\n"),
                 inline: true,
             },
             {
-                name: "Canais",
+                name: "R.O | Canais",
                 value: channelSettingKeys
                     .map((key) => `- ${channelSettingLabels[key]}: ${formatChannel(channels[key])}`)
                     .join("\n"),
                 inline: true,
             },
             {
-                name: "Cargos",
-                value: roleSettingKeys
-                    .map((key) => `- ${roleSettingLabels[key]}: ${formatRole(roles[key])}`)
-                    .join("\n"),
-                inline: true,
+                name: "R.O | Cargos de notificacao",
+                value: formatRoleList(roNotifyRoles),
+                inline: false,
             },
             {
                 name: "Streamers | Canais",
@@ -373,28 +377,16 @@ export function buildSettingsEmbed(
                 name: "Streamers | Imagem",
                 value: streamerImage ?? "`Nao definida`",
                 inline: false,
-            },
-            {
-                name: "Modulos",
-                value: moduleSettingKeys
-                    .map((key) => `- ${moduleSettingLabels[key]}: ${formatModule(modules[key])}`)
-                    .join("\n"),
-                inline: false,
             }
         )
         .setFooter({ text: "Dica: use /painel para abrir o configurador." })
         .setTimestamp();
 }
 
-export function buildSettingsComponents(
-    guildData: Partial<GuildSchema>,
-) {
-    const modules = getPartialModules(guildData);
-    const watchingActivity = getWatchingActivity(guildData);
-
+export function buildSettingsComponents() {
     const channelSelect = new StringSelectMenuBuilder()
         .setCustomId("painel/select-channel")
-        .setPlaceholder("Configurar canais")
+        .setPlaceholder("Configurar canais (R.O e Streamers)")
         .addOptions(
             panelChannelSettingKeys.map((key) => ({
                 label: panelChannelSettingLabels[key],
@@ -405,42 +397,22 @@ export function buildSettingsComponents(
 
     const roleSelect = new StringSelectMenuBuilder()
         .setCustomId("painel/select-role")
-        .setPlaceholder("Configurar cargos")
+        .setPlaceholder("Configurar cargos (R.O e Streamers)")
         .addOptions(
             panelRoleSettingKeys.map((key) => ({
                 label: panelRoleSettingLabels[key],
                 value: key,
-                description: "Definir cargo para este sistema",
+                description: isRoRoleSettingKey(key)
+                    ? "Definir um ou mais cargos de notificacao"
+                    : "Definir cargo para este sistema",
             }))
         );
 
-    const toggleRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        moduleSettingKeys.map((key) =>
-            new ButtonBuilder()
-                .setCustomId(`painel/toggle/${key}`)
-                .setStyle(modules[key] ? ButtonStyle.Success : ButtonStyle.Secondary)
-                .setLabel(`${moduleSettingLabels[key]} ${modules[key] ? "ON" : "OFF"}`)
-        )
-    );
-
     const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-            .setCustomId("painel/edit-prefix")
-            .setStyle(ButtonStyle.Secondary)
-            .setLabel("Editar prefixo"),
-        new ButtonBuilder()
-            .setCustomId("painel/edit-watching")
-            .setStyle(ButtonStyle.Secondary)
-            .setLabel("Editar assistindo"),
         new ButtonBuilder()
             .setCustomId("painel/edit-streamer-image")
             .setStyle(ButtonStyle.Secondary)
             .setLabel("Imagem streamers"),
-        new ButtonBuilder()
-            .setCustomId("painel/clear-watching")
-            .setStyle(ButtonStyle.Danger)
-            .setLabel("Limpar assistindo")
-            .setDisabled(!watchingActivity),
         new ButtonBuilder()
             .setCustomId("painel/help")
             .setStyle(ButtonStyle.Secondary)
@@ -452,11 +424,6 @@ export function buildSettingsComponents(
         .setPlaceholder("Resetar configuracao")
         .addOptions(
             [
-                ...resetSettingKeys.map((key) => ({
-                    label: resetSettingLabels[key],
-                    value: key,
-                    description: key === "all" ? "Reseta todas as configuracoes" : `Reseta ${resetSettingLabels[key].toLowerCase()}`,
-                })),
                 ...streamerResetSettingKeys.map((key) => ({
                     label: streamerResetSettingLabels[key],
                     value: key,
@@ -468,7 +435,6 @@ export function buildSettingsComponents(
     return [
         new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(channelSelect),
         new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(roleSelect),
-        toggleRow,
         new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(resetSelect),
         actionRow,
     ];
@@ -480,31 +446,30 @@ function buildSettingsV2PanelBase(
     streamerConfig?: Partial<StreamerConfigSchema>,
 ) {
     const channels = getPartialChannels(guildData);
-    const roles = getPartialRoles(guildData);
-    const modules = getPartialModules(guildData);
+    const roNotifyRoles = getPartialRoNotifyRoles(guildData);
     const streamerChannels = getPartialStreamerChannels(streamerConfig);
     const streamerRoles = getPartialStreamerRoles(streamerConfig);
     const streamerImage = getStreamerPanelImage(streamerConfig);
-    const activeModules = moduleSettingKeys.filter((key) => modules[key]).length;
     const watchingActivity = getWatchingActivity(guildData);
-    const components = buildSettingsComponents(guildData);
+    const components = buildSettingsComponents();
 
     const container = createContainer("#4f46e5",
         createTextDisplay([
             `## Painel de configuracao | ${guild.name}`,
             `Prefixo atual: \`${guildData.prefix ?? ";"}\``,
             `Assistindo: ${watchingActivity ? `\`${watchingActivity}\`` : "`Nao definido`"}`,
-            `Modulos ativos: \`${activeModules}/${moduleSettingKeys.length}\``,
-            `Blacklist: \`${guildData.blacklist?.length ?? 0}\` usuario(s)`,
         ].join("\n")),
+        createSeparator(),
         createTextDisplay([
-            "### Canais",
+            "### R.O | Canais",
             ...channelSettingKeys.map((key) => `- ${channelSettingLabels[key]}: ${formatChannel(channels[key])}`),
         ].join("\n")),
+        createSeparator(),
         createTextDisplay([
-            "### Cargos",
-            ...roleSettingKeys.map((key) => `- ${roleSettingLabels[key]}: ${formatRole(roles[key])}`),
+            "### R.O | Cargos de notificacao",
+            formatRoleList(roNotifyRoles),
         ].join("\n")),
+        createSeparator(),
         createTextDisplay([
             "### Streamers | Canais",
             ...streamerChannelSettingKeys.map((key) => {
@@ -512,6 +477,7 @@ function buildSettingsV2PanelBase(
                 return `- ${streamerChannelSettingLabels[key]}: ${formatChannel(streamerChannels[configKey])}`;
             }),
         ].join("\n")),
+        createSeparator(),
         createTextDisplay([
             "### Streamers | Cargos",
             ...streamerRoleSettingKeys.map((key) => {
@@ -520,10 +486,7 @@ function buildSettingsV2PanelBase(
             }),
             `- Imagem do painel: ${streamerImage ?? "`Nao definida`"}`,
         ].join("\n")),
-        createTextDisplay([
-            "### Modulos",
-            ...moduleSettingKeys.map((key) => `- ${moduleSettingLabels[key]}: ${formatModule(modules[key])}`),
-        ].join("\n")),
+        createSeparator(),
         ...components
     );
     return container;
@@ -554,21 +517,24 @@ export function buildSettingsV2PanelUpdate(
 }
 
 export function buildChannelPicker(key: PanelChannelSettingKey) {
-    const channelTypes = key === "counter" ? counterChannelTypes : messageChannelTypes;
     return new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
         new ChannelSelectMenuBuilder()
             .setCustomId(`painel/channel/${key}`)
-            .setChannelTypes(channelTypes)
+            .setChannelTypes(messageChannelTypes)
             .setPlaceholder(`Selecione ${panelChannelSettingLabels[key].toLowerCase()}`)
     );
 }
 
 export function buildRolePicker(key: PanelRoleSettingKey) {
-    return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
-        new RoleSelectMenuBuilder()
-            .setCustomId(`painel/role/${key}`)
-            .setPlaceholder(`Selecione ${panelRoleSettingLabels[key].toLowerCase()}`)
-    );
+    const select = new RoleSelectMenuBuilder()
+        .setCustomId(`painel/role/${key}`)
+        .setPlaceholder(`Selecione ${panelRoleSettingLabels[key].toLowerCase()}`);
+
+    if (isRoRoleSettingKey(key)) {
+        select.setMinValues(0).setMaxValues(25);
+    }
+
+    return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select);
 }
 
 export function buildPrefixModal(currentPrefix?: string | null) {

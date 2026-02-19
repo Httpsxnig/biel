@@ -24,8 +24,18 @@ export const streamerConfigSchema = new Schema(
     {
         statics: {
             async get(guildId: string) {
-                return await this.findOne({ guildId }) ?? this.create({ guildId });
+                return this.findOneAndUpdate(
+                    { guildId },
+                    { $setOnInsert: { guildId } },
+                    {
+                        upsert: true,
+                        new: true,
+                        setDefaultsOnInsert: true,
+                    },
+                );
             }
         }
     }
 );
+
+streamerConfigSchema.index({ guildId: 1 }, { unique: true });

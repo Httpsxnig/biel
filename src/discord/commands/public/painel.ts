@@ -1,7 +1,7 @@
 import { createCommand } from "#base";
 import { db } from "#database";
 import { env } from "#env";
-import { buildSettingsV2PanelReply, createBlacklistedEmbed, isBlacklisted } from "#functions";
+import { buildSettingsV2PanelUpdate, createBlacklistedEmbed, isBlacklisted } from "#functions";
 import { ApplicationCommandType } from "discord.js";
 
 createCommand({
@@ -9,21 +9,20 @@ createCommand({
     description: "Abre o painel de configuracao do bot",
     type: ApplicationCommandType.ChatInput,
     dmPermission: false,
-    defaultMemberPermissions: ["ManageGuild"],
     async run(interaction) {
+        await interaction.deferReply({ flags: ["Ephemeral"] }).catch(() => null);
+
         const ownerId = env.OWNER_DISCORD_ID?.trim();
-        if (!ownerId) {
-            await interaction.reply({
-                flags: ["Ephemeral"],
-                content: "OWNER_DISCORD_ID nao foi configurado no .env.",
+        if (ownerId && interaction.user.id !== ownerId) {
+            await interaction.editReply({
+                content: "Apenas o dono configurado pode acessar este painel.",
             });
             return;
         }
 
-        if (interaction.user.id !== ownerId) {
-            await interaction.reply({
-                flags: ["Ephemeral"],
-                content: "Apenas o dono configurado pode acessar este painel.",
+        if (!ownerId && !interaction.memberPermissions?.has("ManageGuild")) {
+            await interaction.editReply({
+                content: "Voce precisa de Gerenciar Servidor para acessar o painel.",
             });
             return;
         }
@@ -33,13 +32,12 @@ createCommand({
             db.streamerConfigs.get(interaction.guildId),
         ]);
         if (isBlacklisted(guildData, interaction.user.id)) {
-            await interaction.reply({
-                flags: ["Ephemeral"],
+            await interaction.editReply({
                 embeds: [createBlacklistedEmbed()],
             });
             return;
         }
 
-        await interaction.reply(buildSettingsV2PanelReply(interaction.guild, guildData, streamerConfig));
+        await interaction.editReply(buildSettingsV2PanelUpdate(interaction.guild, guildData, streamerConfig));
     },
 });

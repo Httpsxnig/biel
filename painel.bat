@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
+set "REFRESH_FLAG=%~dp0.refresh-restart.flag"
 
 title Painel do Bot - biel
 
@@ -112,6 +113,10 @@ call :check_tools
 echo.
 echo Executando npm run start...
 call npm run start
+if exist "%REFRESH_FLAG%" (
+  del /f /q "%REFRESH_FLAG%" >nul 2>&1
+  goto end
+)
 pause
 goto menu
 
@@ -145,6 +150,10 @@ if errorlevel 1 (
 echo.
 echo Executando npm run start...
 call npm run start
+if exist "%REFRESH_FLAG%" (
+  del /f /q "%REFRESH_FLAG%" >nul 2>&1
+  goto end
+)
 pause
 goto menu
 

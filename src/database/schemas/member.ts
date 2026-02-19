@@ -11,10 +11,20 @@ export const memberSchema = new Schema(
     },
     {
         statics: {
-            async get(member: { id: string, guild: { id: string } }) {
+            async get(member: { id: string; guild: { id: string; } }) {
                 const query = { id: member.id, guildId: member.guild.id };
-                return await this.findOne(query) ?? this.create(query);
+                return this.findOneAndUpdate(
+                    query,
+                    { $setOnInsert: query },
+                    {
+                        upsert: true,
+                        new: true,
+                        setDefaultsOnInsert: true,
+                    },
+                );
             }
         }
     },
 );
+
+memberSchema.index({ guildId: 1, id: 1 }, { unique: true });

@@ -10,10 +10,14 @@ export const guildSchema = new Schema(
             general: String,
             counter: String,
             economy: String,
+            roPanel: String,
+            roAnalysis: String,
+            roDecisionLogs: String,
         },
         roles: {
             economy: String,
             blacklistManager: String,
+            roNotifyRoles: { type: [String], default: [] },
         },
         modules: {
             economy: { type: Boolean, default: false },
@@ -28,8 +32,18 @@ export const guildSchema = new Schema(
     {
         statics: {
             async get(id: string) {
-                return await this.findOne({ id }) ?? this.create({ id });
+                return this.findOneAndUpdate(
+                    { id },
+                    { $setOnInsert: { id } },
+                    {
+                        upsert: true,
+                        new: true,
+                        setDefaultsOnInsert: true,
+                    },
+                );
             }
         }
     }
 );
+
+guildSchema.index({ id: 1 }, { unique: true });

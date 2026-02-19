@@ -138,6 +138,17 @@ export function createStreamerPanelMessage(guildId: string, guildName: string, c
         components: [container],
     };
 }
+
+export function isStreamerPanelMessage(
+    message: { author: { id: string; }; components: unknown[]; },
+    botId: string,
+    guildId: string,
+) {
+    if (message.author.id !== botId) return false;
+    return message.components.some((component) =>
+        hasCustomIdRecursive(component, `streamers/form/start/${guildId}`),
+    );
+}
 export function createStreamerQuestionEmbed(state: StreamerFormState) {
     const question = streamerQuestions[state.step];
     const current = state.step + 1;
@@ -285,4 +296,14 @@ function getValidImageUrl(url?: string | null) {
     } catch {
         return null;
     }
+}
+
+function hasCustomIdRecursive(component: unknown, targetCustomId: string): boolean {
+    if (!component || typeof component !== "object") return false;
+
+    const data = component as { customId?: string | null; components?: unknown[]; };
+    if (data.customId === targetCustomId) return true;
+    if (!Array.isArray(data.components)) return false;
+
+    return data.components.some((child) => hasCustomIdRecursive(child, targetCustomId));
 }

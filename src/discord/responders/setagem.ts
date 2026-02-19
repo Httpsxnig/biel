@@ -15,7 +15,7 @@ import {
     isModuleSettingKey,
     isPanelChannelSettingKey,
     isPanelRoleSettingKey,
-    isResetSettingKey,
+    isRoRoleSettingKey,
     isRoleSettingKey,
     isStreamerChannelSettingKey,
     isStreamerResetSettingKey,
@@ -55,15 +55,7 @@ async function ensurePanelPermission(interaction: {
     reply: (options: Record<string, unknown>) => Promise<unknown>;
 }) {
     const ownerId = env.OWNER_DISCORD_ID?.trim();
-    if (!ownerId) {
-        await interaction.reply({
-            flags: ["Ephemeral"],
-            embeds: [createNoticeEmbed("error", "Painel bloqueado", "OWNER_DISCORD_ID nao foi configurado no .env.")],
-        });
-        return false;
-    }
-
-    if (interaction.user.id !== ownerId) {
+    if (ownerId && interaction.user.id !== ownerId) {
         await interaction.reply({
             flags: ["Ephemeral"],
             embeds: [createNoPermissionEmbed("acessar este painel")],
@@ -71,6 +63,7 @@ async function ensurePanelPermission(interaction: {
         return false;
     }
 
+    if (ownerId && interaction.user.id === ownerId) return true;
     if (interaction.memberPermissions?.has("ManageGuild")) return true;
 
     await interaction.reply({
@@ -207,28 +200,76 @@ createResponder({
         const context = await ensureGuildContext(interaction);
         if (!context) return;
 
-        const roleId = interaction.values[0];
+        const roleIds = [...new Set(interaction.values)];
         if (isRoleSettingKey(key)) {
+            const roleId = roleIds[0];
+            if (!roleId) {
+                await interaction.update({
+                    embeds: [createNoticeEmbed("error", "Cargo invalido", "Selecione um cargo valido.")],
+                    components: [],
+                });
+                return;
+            }
             const guildData = await db.guilds.get(context.guildId);
             guildData.set(`roles.${key}`, roleId);
             await guildData.save();
+            await interaction.update({
+                embeds: [
+                    createNoticeEmbed(
+                        "success",
+                        "Cargo atualizado",
+                        `${panelRoleSettingLabels[key]} atualizado para <@&${roleId}>.`,
+                    ),
+                ],
+                components: [],
+            });
+            return;
+        }
+
+        if (isRoRoleSettingKey(key)) {
+            const guildData = await db.guilds.get(context.guildId);
+            guildData.set("roles.roNotifyRoles", roleIds);
+            await guildData.save();
+
+            const formattedRoles = roleIds.length
+                ? roleIds.map((id) => `<@&${id}>`).join(", ")
+                : "`Nenhum cargo selecionado`";
+            await interaction.update({
+                embeds: [
+                    createNoticeEmbed(
+                        "success",
+                        "Cargos atualizados",
+                        `${panelRoleSettingLabels[key]} atualizados para: ${formattedRoles}.`,
+                    ),
+                ],
+                components: [],
+            });
+            return;
         } else if (isStreamerRoleSettingKey(key)) {
+            const roleId = roleIds[0];
+            if (!roleId) {
+                await interaction.update({
+                    embeds: [createNoticeEmbed("error", "Cargo invalido", "Selecione um cargo valido.")],
+                    components: [],
+                });
+                return;
+            }
             const streamerConfig = await db.streamerConfigs.get(context.guildId);
             const configKey = streamerRoleConfigMap[key];
             streamerConfig.set(`roles.${configKey}`, roleId);
             await streamerConfig.save();
+            await interaction.update({
+                embeds: [
+                    createNoticeEmbed(
+                        "success",
+                        "Cargo atualizado",
+                        `${panelRoleSettingLabels[key]} atualizado para <@&${roleId}>.`,
+                    ),
+                ],
+                components: [],
+            });
+            return;
         }
-
-        await interaction.update({
-            embeds: [
-                createNoticeEmbed(
-                    "success",
-                    "Cargo atualizado",
-                    `${panelRoleSettingLabels[key]} atualizado para <@&${roleId}>.`,
-                ),
-            ],
-            components: [],
-        });
     },
 });
 
@@ -287,7 +328,7 @@ createResponder({
 
 createResponder({
     customId: "painel/modal-prefix",
-    types: [ResponderType.Modal],
+    types: [ResponderType.Modal, ResponderType.ModalComponent],
     async run(interaction) {
         if (!await ensurePanelPermission(interaction)) return;
 
@@ -330,7 +371,7 @@ createResponder({
 
 createResponder({
     customId: "painel/modal-watching",
-    types: [ResponderType.Modal],
+    types: [ResponderType.Modal, ResponderType.ModalComponent],
     async run(interaction) {
         if (!await ensurePanelPermission(interaction)) return;
 
@@ -442,7 +483,7 @@ createResponder({
         if (!await ensurePanelPermission(interaction)) return;
 
         const target = interaction.values[0];
-        if (!isResetSettingKey(target) && !isStreamerResetSettingKey(target)) {
+        if (!isStreamerResetSettingKey(target)) {
             await interaction.reply({
                 flags: ["Ephemeral"],
                 embeds: [createNoticeEmbed("error", "Alvo invalido", "Selecione um item valido para resetar.")],
@@ -455,27 +496,10 @@ createResponder({
 
         const guildData = await db.guilds.get(context.guildId);
         const streamerConfig = await db.streamerConfigs.get(context.guildId);
-        if (target === "prefix" || target === "all") guildData.set("prefix", ";");
-        if (target === "channels" || target === "all") guildData.set("channels", {});
-        if (target === "roles" || target === "all") guildData.set("roles", {});
-        if (target === "modules" || target === "all") {
-            guildData.set("modules", {
-                economy: false,
-                blacklist: false,
-                counter: false,
-            });
-        }
-        if (target === "presence" || target === "all") {
-            guildData.set("presence", {});
-            interaction.client.user.setPresence({
-                activities: [],
-                status: "online",
-            });
-        }
-        if (target === "blacklist" || target === "all") guildData.set("blacklist", []);
         if (target === "streamerChannels") streamerConfig.set("channels", {});
         if (target === "streamerRoles") streamerConfig.set("roles", {});
         if (target === "streamerImage") streamerConfig.set("panelImage", undefined);
+        if (target === "roNotifyRoles") guildData.set("roles.roNotifyRoles", []);
 
         await Promise.all([guildData.save(), streamerConfig.save()]);
         await updatePanelMessage(interaction, context);
@@ -495,9 +519,10 @@ createResponder({
                     "info",
                     "Ajuda rapida",
                     [
-                        "Use os menus de canais e cargos para configurar o bot e o sistema de streamers.",
-                        "Use os botoes para editar prefixo, assistindo e imagem do painel streamer.",
-                        "Use os seletores de reset para limpar configuracoes sem comando extra.",
+                        "Use o menu de canais para configurar R.O e Streamers.",
+                        "Use o menu de cargos para configurar cargos de R.O e Streamers.",
+                        "Para R.O, voce pode selecionar varios cargos de notificacao.",
+                        "Use o reset para limpar configuracoes de streamers e cargos de notificacao do R.O.",
                     ].join("\n"),
                 ),
             ],

@@ -4,7 +4,7 @@
   "main": "build/index.js",
   "scripts": {
     "check": "tsc --noEmit && echo ✔ Ok",
-    "build": "tsc",
+    "build": "node -e \"const fs=require('node:fs');fs.rmSync('build',{ recursive:true, force:true });\" && tsc",
     "dev": "tsx --env-file=.env ./src/index.ts",
     "dev:dev": "tsx --env-file=.env.dev ./src/index.ts",
     "watch": "tsx --watch --env-file=.env ./src/index.ts",
