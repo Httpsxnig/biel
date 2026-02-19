@@ -33,10 +33,13 @@ createResponder({
     types: [ResponderType.Button],
     parse: (params) => ({ guildId: params.guildId }),
     async run(interaction, { guildId }) {
+        await interaction.deferReply({
+            flags: ["Ephemeral"],
+        }).catch(() => null);
+
         const current = activeStreamerForms.get(interaction.user.id);
         if (current) {
-            await interaction.reply({
-                flags: ["Ephemeral"],
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("warning", "Formulario em andamento", "Voce ja possui um formulario aberto no privado.")],
             });
             return;
@@ -54,8 +57,7 @@ createResponder({
             await interaction.user.send({
                 embeds: [createStreamerQuestionEmbed(state)],
             });
-            await interaction.reply({
-                flags: ["Ephemeral"],
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("success", "Formulario iniciado", "Confira seu privado para responder as perguntas.")],
             });
         } catch (error) {
@@ -66,8 +68,7 @@ createResponder({
             const description = errorCode === 50007
                 ? "Nao consegui te enviar DM. Verifique privacidade de DMs para membros do servidor."
                 : "Falha interna ao montar sua DM de formulario. Tente novamente.";
-            await interaction.reply({
-                flags: ["Ephemeral"],
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Falha ao iniciar", description)],
             });
         }
@@ -142,10 +143,12 @@ createResponder({
             return;
         }
 
+        await interaction.deferUpdate().catch(() => null);
+
         const config = await db.streamerConfigs.get(state.guildId);
         const applicationChannelId = config.channels?.applications;
         if (!applicationChannelId) {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Canal de analise ausente", "Configure no /painel em Streamers: Canal de analise.")],
                 components: [],
             });
@@ -154,35 +157,42 @@ createResponder({
 
         const channel = await interaction.client.channels.fetch(applicationChannelId).catch(() => null);
         if (!channel || !channel.isTextBased() || !("send" in channel)) {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Canal invalido", "Nao consegui acessar o canal de analise configurado.")],
                 components: [],
             });
             return;
         }
 
-        const request = await db.streamerRequests.create({
-            guildId: state.guildId,
-            userId,
-            answers: state.answers,
-            attachments: state.attachments,
-            status: "pending",
-        });
+        try {
+            const request = await db.streamerRequests.create({
+                guildId: state.guildId,
+                userId,
+                answers: state.answers,
+                attachments: state.attachments,
+                status: "pending",
+            });
 
-        const message = await channel.send({
-            embeds: [createStreamerRequestEmbed(interaction.user, state.answers, state.attachments, config.footer ?? "Sistema de Streamers")],
-            components: [createStreamerReviewButtons(request.id)],
-        });
+            const message = await channel.send({
+                embeds: [createStreamerRequestEmbed(interaction.user, state.answers, state.attachments, config.footer ?? "Sistema de Streamers")],
+                components: [createStreamerReviewButtons(request.id)],
+            });
 
-        request.set("channelId", message.channelId);
-        request.set("messageId", message.id);
-        await request.save();
+            request.set("channelId", message.channelId);
+            request.set("messageId", message.id);
+            await request.save();
 
-        activeStreamerForms.delete(userId);
-        await interaction.update({
-            embeds: [createNoticeEmbed("success", "Formulario enviado", "Seu pedido foi enviado para analise.")],
-            components: [],
-        });
+            activeStreamerForms.delete(userId);
+            await interaction.editReply({
+                embeds: [createNoticeEmbed("success", "Formulario enviado", "Seu pedido foi enviado para analise.")],
+                components: [],
+            });
+        } catch {
+            await interaction.editReply({
+                embeds: [createNoticeEmbed("error", "Falha ao enviar", "Nao foi possivel enviar seu pedido. Tente novamente.")],
+                components: [createStreamerConfirmButtons(userId)],
+            }).catch(() => null);
+        }
     },
 });
 
@@ -271,6 +281,10 @@ createResponder({
             return;
         }
 
+        await interaction.deferReply({
+            flags: ["Ephemeral"],
+        }).catch(() => null);
+
         request.set("status", "rejected");
         request.set("reviewedBy", interaction.user.id);
         request.set("reviewedAt", new Date());
@@ -286,8 +300,7 @@ createResponder({
             await target.send({ embeds: [createStreamerRejectedEmbed()] }).catch(() => null);
         }
 
-        await interaction.reply({
-            flags: ["Ephemeral"],
+        await interaction.editReply({
             embeds: [createNoticeEmbed("success", "Pedido negado", "O pedido foi negado e o usuario foi notificado.")],
         });
     },
@@ -379,9 +392,11 @@ createResponder({
             return;
         }
 
+        await interaction.deferUpdate().catch(() => null);
+
         const request = await db.streamerRequests.findById(requestId);
         if (!request || request.status !== "pending") {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("warning", "Pedido indisponivel", "Este pedido nao esta mais pendente.")],
                 components: [],
             });
@@ -391,7 +406,7 @@ createResponder({
         const config = await db.streamerConfigs.get(request.guildId);
         const roleId = config.roles?.[selectedRole];
         if (!roleId) {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Cargo nao configurado", "O set selecionado nao foi configurado no painel.")],
                 components: [],
             });
@@ -400,7 +415,7 @@ createResponder({
 
         const functionRoleData = getFunctionRoleByKey(selectedFunction);
         if (!functionRoleData.roleId) {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Funcao sem cargo", functionRoleData.warning ?? "Cargo da funcao nao configurado no .env.")],
                 components: [],
             });
@@ -409,7 +424,7 @@ createResponder({
 
         const member = await interaction.guild.members.fetch(request.userId).catch(() => null);
         if (!member) {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Membro nao encontrado", "O usuario nao esta no servidor.")],
                 components: [],
             });
@@ -434,7 +449,7 @@ createResponder({
         }
 
         if (!functionRoleId || !interaction.guild.roles.cache.has(functionRoleId)) {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Cargo da funcao invalido", "O cargo da funcao escolhida nao existe neste servidor.")],
                 components: [],
             });
@@ -444,7 +459,7 @@ createResponder({
         appliedFunctionRoleId = functionRoleId;
 
         const roleAdded = await member.roles.add([...rolesToAdd]).then(() => true).catch(async () => {
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Falha ao setar cargo", "Verifique se o bot tem permissao e hierarquia.")],
                 components: [],
             });
@@ -512,7 +527,7 @@ createResponder({
             responseLines.push(`Aviso: ${verificationWarning}`);
         }
 
-        await interaction.update({
+        await interaction.editReply({
             embeds: [createNoticeEmbed("success", "Aprovacao concluida", responseLines.join("\n"))],
             components: [],
         });
@@ -672,6 +687,8 @@ export async function processStreamerFormMessage(message: Message) {
 
     const state = activeStreamerForms.get(message.author.id);
     if (!state) return false;
+    if (state.lastMessageId === message.id) return true;
+    state.lastMessageId = message.id;
 
     const content = message.content.trim();
     if (["cancelar", "cancel", "cancelar formulario"].includes(content.toLowerCase())) {
@@ -699,12 +716,14 @@ export async function processStreamerFormMessage(message: Message) {
     });
 
     if (question.allowAttachment && imageAttachments.length === 0) {
+        const questionNumber = state.step + 1;
+        const totalQuestions = streamerQuestions.length;
         await message.author.send({
             embeds: [
                 createNoticeEmbed(
                     "error",
                     "Resposta invalida",
-                    "Na pergunta 8/8 voce precisa enviar uma imagem (print). Tente novamente com anexo de imagem."
+                    `Na pergunta ${questionNumber}/${totalQuestions} voce precisa enviar uma imagem (print). Tente novamente com anexo de imagem.`
                 ),
             ],
         });

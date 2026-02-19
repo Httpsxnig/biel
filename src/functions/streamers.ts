@@ -37,6 +37,7 @@ export interface StreamerFormState {
     step: number;
     answers: Partial<Record<StreamerQuestionKey, string>>;
     attachments: string[];
+    lastMessageId?: string;
 }
 
 export const streamerRoleLabels: Record<StreamerRoleKey, string> = {
@@ -49,7 +50,7 @@ export const streamerRoleLabels: Record<StreamerRoleKey, string> = {
 const streamerRoleEntries = Object.entries(streamerRoleLabels) as [StreamerRoleKey, string][];
 const streamerPanelAccentColor = 0x790af7;
 
-export const streamerQuestions: readonly StreamerQuestion[] = [
+const baseStreamerQuestions: readonly StreamerQuestion[] = [
     { key: "requirementsRead", label: "Leu os requisitos? (SIM/NAO)" },
     { key: "realName", label: "Nome real" },
     { key: "age", label: "Idade real" },
@@ -60,6 +61,8 @@ export const streamerQuestions: readonly StreamerQuestion[] = [
     { key: "rpActivity", label: "Atuacao (profissao ou funcao no RP)" },
     { key: "proof", label: "Envie um print do perfil/seguindo (somente imagem)", allowAttachment: true },
 ];
+
+export const streamerQuestions: readonly StreamerQuestion[] = removeDuplicateQuestions(baseStreamerQuestions);
 
 export const activeStreamerForms = new Map<string, StreamerFormState>();
 
@@ -306,4 +309,17 @@ function hasCustomIdRecursive(component: unknown, targetCustomId: string): boole
     if (!Array.isArray(data.components)) return false;
 
     return data.components.some((child) => hasCustomIdRecursive(child, targetCustomId));
+}
+
+function removeDuplicateQuestions(questions: readonly StreamerQuestion[]) {
+    const seen = new Set<StreamerQuestionKey>();
+    const unique: StreamerQuestion[] = [];
+
+    for (const question of questions) {
+        if (seen.has(question.key)) continue;
+        seen.add(question.key);
+        unique.push(question);
+    }
+
+    return unique;
 }

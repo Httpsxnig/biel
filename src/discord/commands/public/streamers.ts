@@ -34,10 +34,11 @@ streamers.subcommand({
     name: "painel",
     description: "Posta o painel com botoes de formulario",
     async run(interaction, { config }) {
+        await interaction.deferReply().catch(() => null);
+
         const channel = interaction.channel;
         if (!channel || !channel.isTextBased() || !("messages" in channel)) {
-            await interaction.reply({
-                flags: ["Ephemeral"],
+            await interaction.editReply({
                 embeds: [createNoticeEmbed("error", "Canal invalido", "Este canal nao aceita mensagens de texto.")],
             });
             return;
@@ -52,6 +53,6 @@ streamers.subcommand({
         }
 
         const payload = createStreamerPanelMessage(interaction.guildId, interaction.guild.name, config);
-        await interaction.reply(payload);
+        await interaction.editReply(payload);
     },
 });
